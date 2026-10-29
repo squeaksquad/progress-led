@@ -19,6 +19,11 @@ const KEEP_FINISHED_MS = 20_000
 // than QUICK_MS: quick commands are the work, not the news.
 const SHOW_AFTER_MS = 3_000
 const QUICK_MS = 5_000
+/** The share of one task a timed job can fill: the task is done when the list says so, not when the clock runs out. */
+const TASK_SHARE_CAP = 0.9
+/** A reported job this far past its length (or this long without a length) was forgotten, and leaves. */
+const OVERRUN_GRACE_MS = 30 * 60_000
+const UNTIMED_STALE_MS = 6 * 60 * 60_000
 
 const tasks = atom({ plugin: 'progress-led', key: 'tasks' } as const, [], { shape: 'tasks-1' })
 const jobs = atom({ plugin: 'progress-led', key: 'jobs' } as const, [], { shape: 'jobs-1' })
@@ -124,6 +129,13 @@ export function applyProgress(list: Job[], input: ProgressInput, at: number, fal
   return [...list.filter(j => j !== before), job]
 }
 
+/** A reported job nobody marked finished: well past its length, or untimed and silent for hours. */
+export function forgotten(job: Job, at: number): boolean {
+  if (job.source !== 'tool') return false
+  if (job.seconds !== null && job.seconds > 0) return at > job.startedAt + job.seconds * 1000 + Math.max(OVERRUN_GRACE_MS, job.seconds * 1000)
+  return at - job.startedAt > UNTIMED_STALE_MS
+}
+
 /** Timed jobs past their length are finished; finished jobs leave after a minute. */
 export function settle(list: Job[], at: number): Job[] {
   return list
@@ -133,6 +145,7 @@ export function settle(list: Job[], at: number): Job[] {
         : j,
     )
     .filter(j => j.finishedAt === null || at - j.finishedAt < KEEP_FINISHED_MS)
+    .filter(j => j.finishedAt !== null || !forgotten(j, at))
     .filter(j => !(j.source === 'bash' && j.finishedAt !== null && j.finishedAt - j.startedAt < QUICK_MS))
     .slice(-20)
 }
@@ -351,7 +364,7 @@ export const register: Register = on => {
     // The task in progress counts by its timed jobs' share, so the bar moves while they run.
     const active = running.filter(j => j.finishedAt === null)
     const shares = active.map(j => fraction(j, at)).filter((s): s is number => s !== null)
-    const partial = current !== undefined && shares.length > 0 ? Math.min(...shares) : 0
+    const partial = current !== undefined && shares.length > 0 ? Math.min(TASK_SHARE_CAP, ...shares) : 0
     const overall = list.length === 0 ? 0 : (done.length + partial) / list.length
     const stamped = done.filter(t => t.completedAt !== null).sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0))
     const recent = stamped.slice(-SHOWN_DONE)
@@ -389,7 +402,9 @@ export const register: Register = on => {
               : job.total !== null && job.done !== null
                 ? `${job.done}/${job.total} · ${clockText(elapsed)}`
                 : job.seconds !== null
-                  ? `${clockText(elapsed)} / ${clockText(job.seconds)} · ends ${localTime(job.startedAt + job.seconds * 1000)}`
+                  ? elapsed > job.seconds
+                    ? `${clockText(elapsed)} / ${clockText(job.seconds)} · over by ${clockText(elapsed - job.seconds)}`
+                    : `${clockText(elapsed)} / ${clockText(job.seconds)} · ends ${localTime(job.startedAt + job.seconds * 1000)}`
                   : `${clockText(elapsed)} elapsed`
           return (
             <Box key={job.id} flexDirection="row" gap={1} alignItems="center">

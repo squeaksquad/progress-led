@@ -227,3 +227,36 @@ test('every bar is the same 24 segments: an image on the desktop, monospaced tex
   for (const one of rows) expect([...one.text].length).toBe(24)
   await terminal.unmount()
 })
+
+test('a job past its length says how far over, never fills its task, and leaves once forgotten', async ($, on) => {
+  const start = Date.UTC(2026, 9, 29, 21, 0)
+  let clock = start
+  on('tool.call', () => ({ result: {} }))
+  on('clock.now', () => ({ value: clock }))
+  on('clock.every', () => ({ value: undefined }))
+  on('tool.register', () => ({ value: { tool: PROGRESS } }))
+
+  await $.tool.call({
+    tool: PLAN,
+    items: [
+      { content: 'A', status: 'completed' },
+      { content: 'B', status: 'completed' },
+      { content: 'C', status: 'completed' },
+      { content: 'Soak', status: 'in_progress' },
+    ],
+  })
+  await $.tool.call({ tool: PROGRESS, label: 'hour', seconds: 3600 })
+  clock = start + 5_400_000
+  await $.tool.call({ tool: PROGRESS, label: 'hour' })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /hour/ }))?.text).toBe('hour · 1:30:00 / 1:00:00 · over by 30:00')
+  expect((await ui.find({ type: 'Text', text: /tasks/ }))?.text).toBe('3/4 tasks · 97.5% ▾')
+  await ui.unmount()
+
+  clock = start + 3600_000 * 2 + 30 * 60_000 + 1_000
+  await $.tool.call({ tool: PROGRESS, label: 'other', seconds: 60 })
+  const later = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await later.find({ type: 'Text', text: /^hour/ })).toBeUndefined()
+  await later.unmount()
+})
