@@ -1,0 +1,12 @@
+{
+  "name": "progress-led",
+  "version": "0.1.0",
+  "description": "An LED-style progress bar above the prompt: the task list with each completion stamped in local time, and live bars for timed commands",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "squeaksquad",
+    "url": "https://github.com/squeaksquad"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/squeaksquad/progress-led"
+}

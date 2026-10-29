@@ -1,0 +1,13 @@
+{
+  "name": "progress-led",
+  "owner": {
+    "name": "squeaksquad"
+  },
+  "plugins": [
+    {
+      "name": "progress-led",
+      "source": "./"
+    }
+  ],
+  "description": "progress-led: an LED-style progress bar mod for Claude Code"
+}
